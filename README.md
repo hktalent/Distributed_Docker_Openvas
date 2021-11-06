@@ -24,10 +24,15 @@ https://pan.baidu.com/s/1Au_xKGV6Fwb3FmT-62QbwA  密码:nja5
 **准备工作**
 
 1. [docker禁用ipv6](https://github.com/lanlin/notes/issues/80)。
+# MacOS 禁用ipv6
+$ networksetup -setv6off wi-fi
 
-2. [先下载项目中规则库](https://github.com/jweny/Distributed_Docker_Openvas)。plugins为NVT规则，cert-data为CERT规则，scap-data为SCAP规则。将三个文件夹copy至宿主机的 `/var/lib/docker/volumu/gvm-data/_data/` 下。
+
+2. [先下载项目中规则库](https://github.com/jweny/Distributed_Docker_Openvas)。plugins为NVT规则，cert-data为CERT规则，scap-data为SCAP规则。将三个文件夹copy至宿主机的 `$HOME/MyWork/51pwn/gvm/_data/` 下。
 
    ![image-20201204113704811](img/image-20201204113704811.png)
+   <img width="325" alt="image" src="https://user-images.githubusercontent.com/18223385/140611941-f336d7d9-7c9e-4543-8338-61faf331db6e.png">
+
 
 **构建镜像**
 
@@ -55,15 +60,57 @@ docker pull jweny/gvm-docker-20.08
 
 ```shell
 # 后面要部署多个scanner 这里SSHD必须设置为true
-docker run -d -p 2222:22 -p 5432:5432 -p 9392:9392 -p 6379:6379 -p 9390:9390 -e TZ="Asia/Shanghai" -e SSHD="true" -e DB_PASSWORD="dbpassword" -e PASSWORD="strongpassword" --volume gvm-data:/data --name gvm jweny/gvm-docker-20.08
 
+# macOS stop  postgresql，redis
+brew services list
+brew services stop postgresql
+brew services stop redis
+
+docker stop gvm
+docker rm gvm
+docker run -d -p 2222:22 -v `pwd`/_data:/data -e USERNAME="admin" -e PASSWORD="admin" -p 5432:5432 -p 9392:9392 -p 6379:6379 -p 9390:9390 -e TZ="Asia/Shanghai" -e SSHD="true" -e DB_PASSWORD="dbpassword" -e PASSWORD="strongpassword" --name gvm jweny/gvm-docker-20.08
 docker start gvm
+docker logs -f gvm
+docker ps -a|grep gvm|grep 'Exited' && docker start gvm
+docker logs -f gvm
+
 ```
-
+注意 docker logs -f gvm，看见
+Updating GVMd data...
+时，webserver 停止了，暂且不能访问：https://127.0.0.1:9392/login
+更新需要很长时间，如果你无法更新，请自行安装“科学上网”VPN在宿主机上，如 Outline，直到成功更新完后再访问 web页面
 检查是否启动成功：
-
 ```
 docker logs -f gvm
+```
+想知道更多细节和日志目录、及信息
+```
+$ docker exec -it gvm /bin/bash
+root@99e8ba95612a:/# ps -ef|more
+UID        PID  PPID  C STIME TTY          TIME CMD
+...
+root       770     1  0 21:50 ?        00:00:01 /usr/bin/python3 /usr/local/bin/ospd-openvas --log-file /usr/local/var/log/gvm/ospd-openvas.log --unix-socket /var/run/ospd/ospd.sock --log-level INF
+O
+root       772   770  0 21:50 ?        00:00:00 /usr/bin/python3 /usr/local/bin/ospd-openvas --log-file /usr/local/var/log/gvm/ospd-openvas.log --unix-socket /var/run/ospd/ospd.sock --log-level INF
+
+gvm        835   783  1 21:50 ?        00:00:05 gvmd: Syncing SCAP: Updating CPEs
+postgres   838    22 20 21:50 ?        00:01:00 postgres: gvm gvmd [local] INSERT
+root       846   770  0 21:50 ?        00:00:00 openvas --update-vt-info
+
+这里可以看到更新进度
+root       847   846 14 21:50 ?        00:00:40 openvas: Reloaded 7100 of 64308 NVTs (11% / ETA: 25:47)
+
+gvm        852     1  0 21:50 ?        00:00:00 gsad --verbose --gnutls-priorities=SECURE128:-AES-128-CBC:-CAMELLIA-128-CBC:-VERS-SSL3.0:-VERS-TLS1.0 --timeout=15 --no-redirect --mlisten=127.0.0.1 
+--mport=9390 --port=9392
+
+日志目录你应该看见了
+root       868     1  0 21:50 ?        00:00:00 sshd: /usr/sbin/sshd -f /sshd_config -E /usr/local/var/log/gvm/sshd.log [listener] 0 of 10-100 startups
+root       870     8  0 21:50 ?        00:00:00 tail -F /usr/local/var/log/gvm/gsad.log /usr/local/var/log/gvm/gvmd.log /usr/local/var/log/gvm/ospd-openvas.log /usr/local/var/log/gvm/sshd.log
+
+看更新进度
+# ps -ef|grep "openvas: Reloaded"
+直到末尾看到
+md manage:   INFO:2021-11-06 14h04.43 utc:950: sync_cert: Updating CERT info succeeded.
 ```
 
 如果看到下图则启动成功：
@@ -224,4 +271,9 @@ for {
 	}
 }
 ```
+# thanks
+@jweny @jweny0
+@fnmsd @lifr233
 
+# more see
+http://github.com/hktalent/51pwn
